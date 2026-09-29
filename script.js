@@ -1,240 +1,429 @@
-const board = document.querySelector('.board');
-const startButton = document.querySelector('.btn-start');
-const modal = document.querySelector(".modal");
-const startGameModal = document.querySelector('.start-game');
-const gameOverModal = document.querySelector('.game-over');
-const restartButton = document.querySelector('.btn-restart');
+const board = document.querySelector(".board");
+const startButton = document.querySelector(".btn-start");
+const restartButton = document.querySelector(".btn-restart");
 
-const highScoreElement = document.querySelector('#high-score');
+const modal = document.querySelector(".modal");
+const startGameModal = document.querySelector(".start-game");
+const gameOverModal = document.querySelector(".game-over");
+
+const highScoreElement = document.querySelector("#high-score");
 const scoreElement = document.querySelector("#score");
 const timeElement = document.querySelector("#time");
 
 const blockSizeDesktop = 40;
 const blockSizeMobile = 24;
 
-let IntervalId = null;
-let timerIntervalId = null;
-
-let highScore = localStorage.getItem("highScore") || 0;
-let score = 0;
-let time = `00:00`;
-
-highScoreElement.innerText = highScore;
-
-let isMobile = window.innerWidth <= 768;
-let blockSize = isMobile ? blockSizeMobile : blockSizeDesktop;
+const isMobile = window.innerWidth <= 768;
+const blockSize = isMobile
+    ? blockSizeMobile
+    : blockSizeDesktop;
 
 const cols = Math.floor(board.clientWidth / blockSize);
 const rows = Math.floor(board.clientHeight / blockSize);
 
-const blocks = [];
+let intervalId = null;
+let timerIntervalId = null;
 
-
-let food = {x: Math.floor(Math.random()*rows), y: Math.floor(Math.random()*cols)};
-let snake = [
-    {
-        x: 1, y: 3
-    },
-];
+let highScore = Number(localStorage.getItem("highScore")) || 0;
+let score = 0;
+let time = "00:00";
 
 let direction = "right";
+let nextDirection = "right";
 
+let snake = [
+    { x: 1, y: 3 },
+    { x: 1, y: 2 },
+    { x: 1, y: 1 }
+];
+
+let food = {
+    x: 0,
+    y: 0
+};
+
+const blocks = [];
+
+highScoreElement.innerText = highScore;
+
+
+// ==================== Create Game Board ====================
 
 const fragment = document.createDocumentFragment();
 
-for(let row=0;row<rows;row++){
-    for(let col=0;col<cols;col++){
-        const block = document.createElement('div');
+for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+        const block = document.createElement("div");
+
         block.className = "block";
+
         fragment.append(block);
+
         blocks[`${row}-${col}`] = block;
     }
 }
+
 board.append(fragment);
 
 
+// ==================== Snake Functions ====================
 
-// render snake on screen
-function render(){
-    let head = null;
-    let tail = null;
+// Show snake on the board
+function renderSnake() {
+    snake.forEach((segment) => {
+        blocks[`${segment.x}-${segment.y}`]
+            .classList.add("fill");
+    });
+}
 
-    blocks[`${food.x}-${food.y}`].classList.add('food');
+// Remove snake from the board
+function clearSnake() {
+    snake.forEach((segment) => {
+        blocks[`${segment.x}-${segment.y}`]
+            .classList.remove("fill");
+    });
+}
 
-    if(direction === "left"){
-        head = {x: snake[0].x, y: snake[0].y - 1}
-    } else if(direction === "right"){
-        head = {x: snake[0].x, y: snake[0].y + 1}
-    } else if(direction === "up"){
-        head = {x: snake[0].x -1 , y: snake[0].y}
-    } else if(direction === "down"){
-        head = {x: snake[0].x +1 , y: snake[0].y}
+
+// ==================== Food Functions ====================
+
+// Generate food at an empty position
+function generateFood() {
+    let newFood;
+
+    do {
+        newFood = {
+            x: Math.floor(Math.random() * rows),
+            y: Math.floor(Math.random() * cols)
+        };
+    } while (
+        snake.some(
+            (segment) =>
+                segment.x === newFood.x &&
+                segment.y === newFood.y
+        )
+    );
+
+    food = newFood;
+
+    blocks[`${food.x}-${food.y}`]
+        .classList.add("food");
+}
+
+
+// ==================== Direction Functions ====================
+
+// Get the next position of snake head
+function getNextHead() {
+    const head = snake[0];
+
+    if (direction === "left") {
+        return {
+            x: head.x,
+            y: head.y - 1
+        };
     }
 
-
-    // wall collision logic
-    if(head.x<0 || head.x>=rows || head.y<0 || head.y>=cols){
-        clearInterval(IntervalId);
-        clearInterval(timerIntervalId);
-        modal.style.display = "flex";
-        startGameModal.style.display = "none";
-        gameOverModal.style.display = "flex";
-        return;
+    if (direction === "right") {
+        return {
+            x: head.x,
+            y: head.y + 1
+        };
     }
 
-    // snake-head collision with body logic
-    if(snake.some(segment => segment.x === head.x && segment.y === head.y)){
-        clearInterval(IntervalId);
-        clearInterval(timerIntervalId);
-        location.reload();
-        return;
+    if (direction === "up") {
+        return {
+            x: head.x - 1,
+            y: head.y
+        };
     }
 
-    // food consumed logic
-    if(head.x == food.x && head.y == food.y){
-        blocks[`${food.x}-${food.y}`].classList.remove('food');
-        do{
-            food = {
-                x: Math.floor(Math.random()*rows),
-                y: Math.floor(Math.random()*cols)
-            };
-        }while(
-            snake.some(segment =>
-                segment.x === food.x &&
-                segment.y === food.y
-            )
+    return {
+        x: head.x + 1,
+        y: head.y
+    };
+}
+
+// Prevent snake from moving directly in opposite direction
+function isOppositeDirection(newDirection) {
+    return (
+        (newDirection === "left" && direction === "right") ||
+        (newDirection === "right" && direction === "left") ||
+        (newDirection === "up" && direction === "down") ||
+        (newDirection === "down" && direction === "up")
+    );
+}
+
+
+// ==================== Score Functions ====================
+
+// Update score and high score
+function updateScore() {
+    score += 10;
+
+    scoreElement.innerText = score;
+
+    if (score > highScore) {
+        highScore = score;
+
+        localStorage.setItem(
+            "highScore",
+            highScore
         );
 
-        blocks[`${food.x}-${food.y}`].classList.add('food'); 
-        snake.unshift(head);
+        highScoreElement.innerText = highScore;
+    }
+}
 
-        score+=10;
-        scoreElement.innerText = score;
 
-        if(score>highScore){
-            highScore = score;
-            localStorage.setItem("highScore", highScore.toString());
-        }
+// ==================== Game Over ====================
 
+function showGameOver() {
+    clearInterval(intervalId);
+    clearInterval(timerIntervalId);
+
+    modal.style.display = "flex";
+    startGameModal.style.display = "none";
+    gameOverModal.style.display = "flex";
+}
+
+
+// ==================== Main Game Logic ====================
+
+function render() {
+    direction = nextDirection;
+
+    const head = getNextHead();
+
+    // Wall collision
+    if (
+        head.x < 0 ||
+        head.x >= rows ||
+        head.y < 0 ||
+        head.y >= cols
+    ) {
+        showGameOver();
+        return;
     }
 
+    // Check if snake ate food
+    const ateFood =
+        head.x === food.x &&
+        head.y === food.y;
 
-    snake.forEach((segment) => {
-        blocks[`${segment.x}-${segment.y}`].classList.remove("fill");
-    })
+    // Ignore the current tail during normal movement
+    const bodyToCheck = ateFood
+        ? snake
+        : snake.slice(0, -1);
 
+    // Snake body collision
+    const hitBody = bodyToCheck.some(
+        (segment) =>
+            segment.x === head.x &&
+            segment.y === head.y
+    );
+
+    if (hitBody) {
+        showGameOver();
+        return;
+    }
+
+    // Save old tail before changing snake
+    const oldTail = {
+        ...snake[snake.length - 1]
+    };
+
+    // Remove old snake from board
+    clearSnake();
+
+    // Move snake forward
     snake.unshift(head);
     snake.pop();
 
-    snake.forEach((segment) => {
-        blocks[`${segment.x}-${segment.y}`].classList.add("fill");
-    })
+    if (ateFood) {
+        // Remove old food
+        blocks[`${food.x}-${food.y}`]
+            .classList.remove("food");
+
+        // Add old tail back to snake
+        // This increases the snake length from the tail side
+        snake.push(oldTail);
+
+        // Update score
+        updateScore();
+
+        // Generate new food
+        generateFood();
+    }
+
+    // Show updated snake
+    renderSnake();
 }
 
 
-// start timer
-function startTimer(){
+// ==================== Timer ====================
+
+function startTimer() {
     clearInterval(timerIntervalId);
+
     timerIntervalId = setInterval(() => {
-        let [min,sec] = time.split(":").map(Number);
-        if(sec == 59){
-            min+=1;
-            sec = 0;
-        }else{
-            sec+=1;
+        let [minutes, seconds] = time
+            .split(":")
+            .map(Number);
+
+        seconds++;
+
+        if (seconds === 60) {
+            seconds = 0;
+            minutes++;
         }
 
-        time = `${String(min).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
-        timeElement.innerText = time;
+        time =
+            `${String(minutes).padStart(2, "0")}:` +
+            `${String(seconds).padStart(2, "0")}`;
 
+        timeElement.innerText = time;
     }, 1000);
 }
 
-// start Button
-startButton.addEventListener('click',() => {
+
+// ==================== Start Game ====================
+
+function startGame() {
     modal.style.display = "none";
 
-    IntervalId = setInterval(() => { render() },330)
-    startTimer();
-})
+    clearInterval(intervalId);
 
-// restart Button
-restartButton.addEventListener('click',restartGame);
-function restartGame() {
+    intervalId = setInterval(render, 330);
 
-    blocks[`${food.x}-${food.y}`].classList.remove("food");
-    snake.forEach((segment) => {
-        blocks[`${segment.x}-${segment.y}`].classList.remove("fill");
-    })
-
-    score = 0;
-    scoreElement.innerText = score;
-    time = `00:00`;
-
-    timeElement.innerText = time;
-    highScoreElement.innerText = highScore;
-
-    modal.style.display = "none";
-    snake = [{x: 1, y: 3}];
-    direction = "right";
-    food = {x: Math.floor(Math.random()*rows), y: Math.floor(Math.random()*cols)};
-
-    IntervalId = setInterval(() => { render() },330);
     startTimer();
 }
 
+startButton.addEventListener("click", startGame);
+
+
+// ==================== Restart Game ====================
+
+function restartGame() {
+    clearInterval(intervalId);
+    clearInterval(timerIntervalId);
+
+    // Remove old snake
+    clearSnake();
+
+    // Remove old food
+    blocks[`${food.x}-${food.y}`]
+        .classList.remove("food");
+
+    // Reset score
+    score = 0;
+    scoreElement.innerText = score;
+
+    // Reset timer
+    time = "00:00";
+    timeElement.innerText = time;
+
+    // Keep high score
+    highScoreElement.innerText = highScore;
+
+    // Reset snake
+    snake = [
+        { x: 1, y: 3 },
+        { x: 1, y: 2 },
+        { x: 1, y: 1 }
+    ];
+
+    // Reset direction
+    direction = "right";
+    nextDirection = "right";
+
+    // Show new snake and food
+    renderSnake();
+    generateFood();
+
+    // Hide modal
+    modal.style.display = "none";
+
+    // Start game again
+    intervalId = setInterval(render, 330);
+
+    startTimer();
+}
+
+restartButton.addEventListener("click", restartGame);
+
+
+// ==================== Keyboard Controls ====================
 
 window.addEventListener("keydown", (event) => {
-    if(event.key === "ArrowLeft"){
-        direction = "left";
-    } else if(event.key === "ArrowRight"){
-        direction = "right";
-    } else if(event.key === "ArrowUp"){
-        direction = "up";
-    } else if(event.key === "ArrowDown"){
-        direction = "down";
+    let newDirection = null;
+
+    if (event.key === "ArrowLeft") {
+        newDirection = "left";
     }
 
-    if (event.key === "Enter") {
+    if (event.key === "ArrowRight") {
+        newDirection = "right";
+    }
 
-        // Start modal dikh raha hai
+    if (event.key === "ArrowUp") {
+        newDirection = "up";
+    }
+
+    if (event.key === "ArrowDown") {
+        newDirection = "down";
+    }
+
+    // Change direction if it is not opposite
+    if (
+        newDirection &&
+        !isOppositeDirection(newDirection)
+    ) {
+        nextDirection = newDirection;
+    }
+
+    // Enter key for start and restart
+    if (event.key === "Enter") {
         if (startGameModal.style.display !== "none") {
             startButton.click();
-        }
-
-        // Game Over modal dikh raha hai
-        else if (gameOverModal.style.display !== "none") {
+        } else if (
+            gameOverModal.style.display !== "none"
+        ) {
             restartButton.click();
         }
     }
+});
 
 
-})
+// ==================== Mobile Controls ====================
 
-// ==================== MOBILE TOUCH CONTROLS ====================
-document.querySelectorAll('.arrow-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        const newDir = btn.getAttribute('data-dir');
-        
-        // Prevent reversing directly into itself
-        if (
-            (newDir === "left" && direction === "right") ||
-            (newDir === "right" && direction === "left") ||
-            (newDir === "up" && direction === "down") ||
-            (newDir === "down" && direction === "up")
-        ) {
+document.querySelectorAll(".arrow-btn").forEach((button) => {
+    button.addEventListener("click", () => {
+        const newDirection =
+            button.getAttribute("data-dir");
+
+        // Prevent opposite direction
+        if (isOppositeDirection(newDirection)) {
             return;
         }
-        
-        direction = newDir;
+
+        nextDirection = newDirection;
     });
 });
 
-// Handle window resize (for orientation change)
-window.addEventListener('resize', () => {
+
+// ==================== Window Resize ====================
+
+window.addEventListener("resize", () => {
     const newIsMobile = window.innerWidth <= 768;
+
     if (newIsMobile !== isMobile) {
-        // Simple page reload for layout change (keeps code clean)
         location.reload();
     }
 });
+
+
+// ==================== Initial Game Setup ====================
+
+renderSnake();
+generateFood();
